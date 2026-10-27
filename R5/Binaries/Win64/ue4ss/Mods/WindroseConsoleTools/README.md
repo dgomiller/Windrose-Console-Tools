@@ -1,5 +1,8 @@
 # Windrose Console Tools
 
+**Repository:** https://github.com/dgomiller/Windrose-Console-Tools — latest releases, source,
+and issue tracker.
+
 A small, standalone set of `rf`-prefixed console commands for Windrose — spawning something for a
 quick look, inspecting whatever you're aiming at, basic utility toggles (no-clip, freeze AI), a
 repositionable photo camera, and weather/time control.
