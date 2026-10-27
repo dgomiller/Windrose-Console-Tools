@@ -49,6 +49,12 @@ that already existed in the world.
 exact numbers so a result is reproducible — you can paste the same command again later and get the
 same result back.
 
+**Finding a class/asset path for `rfentityspawn`/`rfmeshspawn`.** Both commands need the exact
+full `/Game/...` path of whatever you want to spawn, which isn't something you'd normally know off
+the top of your head. `pakcontents.xlsx` (included in this repo) is a full listing of every asset
+in the game's own pak files — search it for a name you recognize (a Blueprint for `rfentityspawn`,
+a `SM_...` static mesh for `rfmeshspawn`) to find its real path.
+
 ## Commands
 
 ### Help
