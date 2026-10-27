@@ -29,6 +29,19 @@ local function registerCmdInfo(name, usage, desc)
     RF_COMMANDS[#RF_COMMANDS + 1] = { name = name, usage = usage or name, desc = desc or "" }
 end
 
+-- Every command's handler function is kept here by name, in addition to being registered as a
+-- real console command -- this is what lets the optional R5ModSettings keybind integration
+-- (bottom of this file) invoke a command directly from a key press, without needing to re-type
+-- it through the console. Pressing a bound key calls the handler with empty Parameters, i.e. the
+-- exact same thing as typing the bare command with nothing after it.
+local RF_HANDLERS = {}
+local function registerRFCommand(name, handler)
+    RF_HANDLERS[name] = handler
+    if RegisterConsoleCommandHandler then
+        pcall(function() RegisterConsoleCommandHandler(name, handler) end)
+    end
+end
+
 ----------------------------------------------------------------------------------------------
 -- Shared targeting cache -- what rftarget last aimed at. rftargetdata, rfgettargetfuncs, and
 -- rfnoai all read from this ONE slot, the same "probe, then act" two-step every command in this
@@ -125,7 +138,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfhelp", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfhelp", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] " .. msg .. "\n")
                 pcall(function()
@@ -239,7 +252,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rftarget", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rftarget", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rftarget] " .. msg .. "\n")
                 pcall(function()
@@ -288,7 +301,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rftarget", "rftarget  |  rftarget player  |  rftarget child <propertyName>",
         "Aims using your camera's look direction and remembers the nearest actor in front of you (within 400 units) as the 'current target' for rftargetdata/rfgettargetfuncs/rfnoai. 'rftarget player' targets your own character instead. 'rftarget child <propertyName>' re-points the target at a named object-reference property found on whatever is currently targeted, so you can drill one step deeper (e.g. from an actor into one of its components) -- run rftargetdata first to see what property names are available to drill into.")
 
-    RegisterConsoleCommandHandler("rftargetdata", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rftargetdata", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rftargetdata] " .. msg .. "\n")
             pcall(function()
@@ -307,7 +320,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rftargetdata", "rftargetdata",
         "Prints every property (name and current value) declared on your current target (set by rftarget), walking up its entire class hierarchy from the most specific class to the base Object class. This is how you find out what an object actually is -- its stats, its component references, its settings. Run rftarget first to set a target.")
 
-    RegisterConsoleCommandHandler("rfgettargetfuncs", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfgettargetfuncs", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfgettargetfuncs] " .. msg .. "\n")
             pcall(function()
@@ -406,7 +419,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfentityspawn", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfentityspawn", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfentityspawn] " .. msg .. "\n")
                 pcall(function()
@@ -451,7 +464,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rfentityspawn", "rfentityspawn </Game/Path/To/BP_Something.BP_Something_C> [yaw]",
         "Spawns one instance of the given class about 200 units in front of you, optionally facing the given yaw in degrees (default 0 = facing the same direction you are). The class path must be the full /Game/... path including the trailing _C. This is for quick testing/visual checks only -- nothing spawned this way is saved: it exists only for the current play session (closing the game, or running rfdespawn, removes it). Not every class is spawnable this way -- some require extra setup the engine can't provide generically and will fail with a 'spawn failed' message.")
 
-    RegisterConsoleCommandHandler("rfdespawn", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfdespawn", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfdespawn] " .. msg .. "\n")
             pcall(function()
@@ -497,7 +510,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfnoai", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfnoai", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfnoai] " .. msg .. "\n")
                 pcall(function()
@@ -596,14 +609,18 @@ if ExecuteWithDelay then rfnoclipDirectionTick() end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfnoclip", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfnoclip", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfnoclip] " .. msg .. "\n")
                 pcall(function()
                     if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
                 end)
             end
-            local mode = (Parameters and Parameters[1] or "on"):lower()
+            -- No argument given (including a keybind press, which always calls with empty
+            -- Parameters) toggles based on the current state, rather than always defaulting to
+            -- "on" -- that's what makes this usable bound to a single key.
+            local mode = Parameters and Parameters[1] and tostring(Parameters[1]):lower()
+            if not mode or mode == "" then mode = RFNOCLIP.active and "off" or "on" end
             if mode ~= "on" and mode ~= "off" then
                 say("usage: rfnoclip <on|off>")
                 return true
@@ -646,8 +663,8 @@ if RegisterConsoleCommandHandler then
             return true
         end)
     end)
-    registerCmdInfo("rfnoclip", "rfnoclip <on|off>",
-        "Toggles no-clip (fly freely through walls/terrain, no gravity) on your own character, by writing directly to its movement component (the game's built-in Ghost()/Fly() cheat functions are confirmed non-functional in this build, which is why this writes the underlying properties directly instead). While active, looking up/down and moving forward actually climbs/descends like a normal free-fly camera -- your existing movement keys work, you don't need a separate up/down key. Prints a readback of the values it just set, so you can confirm it actually took effect. rfnudge is still available as a precise alternative if you want exact vertical control.")
+    registerCmdInfo("rfnoclip", "rfnoclip  |  rfnoclip <on|off>",
+        "Toggles no-clip (fly freely through walls/terrain, no gravity) on your own character, by writing directly to its movement component (the game's built-in Ghost()/Fly() cheat functions are confirmed non-functional in this build, which is why this writes the underlying properties directly instead). Run with no argument (or from a keybind) to flip it based on its current state; 'on'/'off' force a specific state. While active, looking up/down and moving forward actually climbs/descends like a normal free-fly camera -- your existing movement keys work, you don't need a separate up/down key. Prints a readback of the values it just set, so you can confirm it actually took effect. rfnudge is still available as a precise alternative if you want exact vertical control.")
 end
 
 ----------------------------------------------------------------------------------------------
@@ -667,7 +684,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfmeshspawn", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfmeshspawn", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfmeshspawn] " .. msg .. "\n")
                 pcall(function()
@@ -767,7 +784,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rfmeshspawn", "rfmeshspawn </Game/Path/To/SM_Something.SM_Something> [zOffset]",
         "Spawns a raw static mesh asset as plain inert decoration (no pickup glow, no physics toss) 200 units in front of you, raised by zOffset units (default 20). Useful for previewing an asset without needing to add it to any kind of item list first. The path must be the full /Game/... path and must repeat the asset name after the final dot, e.g. '/Game/.../SM_Foo.SM_Foo'. Tracked the same way as rfentityspawn -- rfdespawn removes it.")
 
-    RegisterConsoleCommandHandler("rfmeshsolid", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfmeshsolid", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfmeshsolid] " .. msg .. "\n")
             pcall(function()
@@ -921,7 +938,7 @@ if ExecuteWithDelay then rfcamSelfieTick() end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfcamera", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfcamera", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfcamera] " .. msg .. "\n")
                 pcall(function()
@@ -970,7 +987,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rfcamera", "rfcamera <tripod|selfie|off|reset>",
         "Spawns (or repositions) a standalone camera for taking screenshots. 'tripod' places it where you're standing, facing the same direction you are, and leaves it there even as you walk away -- good for a fixed-composition shot. 'selfie' places it in front of your face, facing back at you, and keeps following your look direction every frame -- good for a selfie-style shot. 'off' removes the camera and returns your view to normal. 'reset' re-anchors tripod mode to your current position (selfie has nothing to reset, since it always follows you). Only one camera is active at a time -- switching modes replaces whichever one was active. This is a plain engine camera, not a custom asset, so it works with just this mod installed.")
 
-    RegisterConsoleCommandHandler("rfcammove", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfcammove", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfcammove] " .. msg .. "\n")
             pcall(function()
@@ -995,7 +1012,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rfcammove", "rfcammove <x|y|z> <amount>",
         "Nudges the active rfcamera camera along one world axis by a signed amount (positive or negative), for exact/repeatable positioning. Does nothing (with a message) if no camera is currently active.")
 
-    RegisterConsoleCommandHandler("rfcamrotate", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfcamrotate", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfcamrotate] " .. msg .. "\n")
             pcall(function()
@@ -1021,7 +1038,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rfcamrotate", "rfcamrotate <pitch|yaw|roll> <amount>",
         "Rotates the active rfcamera camera on one axis by a signed number of degrees, for exact/repeatable framing. Does nothing (with a message) if no camera is currently active.")
 
-    RegisterConsoleCommandHandler("rfcamfov", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfcamfov", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfcamfov] " .. msg .. "\n")
             pcall(function()
@@ -1042,7 +1059,7 @@ if RegisterConsoleCommandHandler then
     registerCmdInfo("rfcamfov", "rfcamfov <value>",
         "Sets the field of view (in degrees, e.g. 90) on the active rfcamera camera's lens. Does nothing (with a message) if no camera is currently active.")
 
-    RegisterConsoleCommandHandler("rfcamcoords", function(FullCommand, Parameters, Ar)
+    registerRFCommand("rfcamcoords", function(FullCommand, Parameters, Ar)
         local function say(msg)
             print("[WindroseConsoleTools] [rfcamcoords] " .. msg .. "\n")
             pcall(function()
@@ -1129,7 +1146,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfsetweather", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfsetweather", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfsetweather] " .. msg .. "\n")
                 pcall(function()
@@ -1231,7 +1248,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfsettime", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfsettime", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfsettime] " .. msg .. "\n")
                 pcall(function()
@@ -1260,7 +1277,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rftargetmove", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rftargetmove", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rftargetmove] " .. msg .. "\n")
                 pcall(function()
@@ -1371,7 +1388,7 @@ end
 
 if RegisterConsoleCommandHandler then
     pcall(function()
-        RegisterConsoleCommandHandler("rfnudge", function(FullCommand, Parameters, Ar)
+        registerRFCommand("rfnudge", function(FullCommand, Parameters, Ar)
             local function say(msg)
                 print("[WindroseConsoleTools] [rfnudge] " .. msg .. "\n")
                 pcall(function()
@@ -1391,6 +1408,118 @@ if RegisterConsoleCommandHandler then
     end)
     registerCmdInfo("rfnudge", "rfnudge <up|down> [amount]",
         "Moves your own character straight up or down by [amount] world units (default 100). This is specifically for vertical movement while rfnoclip is on -- there is no normal key bound to fly up/down in this game, so without this command you can only move horizontally while flying. Run it repeatedly to keep climbing or descending, e.g. 'rfnudge up 50' several times in a row.")
+end
+
+----------------------------------------------------------------------------------------------
+-- rfver -- version/credits/license/repo, for checking what's installed or where to report an
+-- issue. Keep RF_VERSION in sync with mod.txt's own version number.
+----------------------------------------------------------------------------------------------
+
+local RF_VERSION = "1.1.0"
+local RF_REPO_URL = "https://github.com/dgomiller/Windrose-Console-Tools"
+local RF_CREDITS = "Built by RedFalcon, reusing proven techniques originally developed for Living Base Enhanced."
+local RF_LICENSE_SUMMARY = "All rights reserved, except: personal modification is fine, and reuse/porting elsewhere is fine with credit. Not permitted: reuploading/rehosting this mod, or selling/monetizing it. Full text in this mod's LICENSE file (shipped alongside this install) or the repository above."
+
+if RegisterConsoleCommandHandler then
+    pcall(function()
+        registerRFCommand("rfver", function(FullCommand, Parameters, Ar)
+            local function say(msg)
+                print("[WindroseConsoleTools] [rfver] " .. msg .. "\n")
+                pcall(function()
+                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
+                end)
+            end
+            say("Windrose Console Tools v" .. RF_VERSION)
+            say(RF_CREDITS)
+            say("License: " .. RF_LICENSE_SUMMARY)
+            say("Repository: " .. RF_REPO_URL)
+            return true
+        end)
+    end)
+    registerCmdInfo("rfver", "rfver",
+        "Prints this mod's version number, credits, a short license summary, and its GitHub repository URL (for updates/issues). Useful for checking exactly which version you have installed.")
+end
+
+----------------------------------------------------------------------------------------------
+-- Optional keybinds via R5ModSettings (Settings > Mods) -- ANY command above can be bound to a
+-- key, but NONE are bound by default; this only does anything once a key is actually picked in
+-- the Settings > Mods panel for this mod. Pressing a bound key runs that command with no extra
+-- arguments, exactly the same as typing the bare command and hitting enter (rfnoclip is the one
+-- exception: with no argument it TOGGLES based on its current state instead of always forcing
+-- "on", specifically so it's usable from a single key). Read once, here, at mod load --
+-- RegisterKeyBind is not safe to call again later during gameplay (confirmed in Living Base
+-- Enhanced: a live keybind poll reliably crashed the game), so a key picked/changed in Settings >
+-- Mods takes effect on the next game restart, not immediately.
+----------------------------------------------------------------------------------------------
+
+-- Raw Windows virtual-key codes for keys this UE4SS build's Key[] table doesn't expose (same
+-- fallback table Living Base Enhanced uses -- see its own main.lua for the discovery notes).
+local VK_FALLBACK = {
+    UP = 0x26, DOWN = 0x28, LEFT = 0x25, RIGHT = 0x27,
+    NUM_DIVIDE = 0x6F, NUM_MULTIPLY = 0x6A, NUM_ZERO = 0x60, NUM_SUBTRACT = 0x6D, NUM_ADD = 0x6B,
+    NUM_DECIMAL = 0x6E,
+    BACKSPACE = 0x08, TAB = 0x09, ENTER = 0x0D, ESCAPE = 0x1B, SPACE = 0x20,
+    CAPS_LOCK = 0x14, NUM_LOCK = 0x90, SCROLL_LOCK = 0x91, PRINT_SCREEN = 0x2C, PAUSE = 0x13,
+    LEFT_SHIFT = 0xA0, RIGHT_SHIFT = 0xA1, LEFT_CONTROL = 0xA2, RIGHT_CONTROL = 0xA3,
+    LEFT_ALT = 0xA4, RIGHT_ALT = 0xA5,
+    OEM_SEMICOLON = 0xBA, OEM_EQUALS = 0xBB, OEM_MINUS = 0xBD, OEM_SLASH = 0xBF, OEM_TILDE = 0xC0,
+    OEM_LEFT_BRACKET = 0xDB, OEM_RIGHT_BRACKET = 0xDD, OEM_QUOTE = 0xDE,
+    MOUSE_LEFT = 0x01, MOUSE_RIGHT = 0x02, MOUSE_MIDDLE = 0x04, MOUSE_THUMB1 = 0x05, MOUSE_THUMB2 = 0x06,
+    F9 = 0x78, F10 = 0x79, F11 = 0x7A, F12 = 0x7B,
+    HOME = 0x24, END = 0x23, INSERT = 0x2D, DELETE = 0x2E, PAGE_UP = 0x21, PAGE_DOWN = 0x22,
+}
+for c = string.byte("A"), string.byte("Z") do VK_FALLBACK[string.char(c)] = c end
+for d = 0, 9 do VK_FALLBACK["DIGIT_" .. d] = string.byte(tostring(d)) end
+local function resolveKeyValue(lbName)
+    if lbName == nil then return nil end
+    local kv = Key and Key[lbName]
+    if kv == nil then kv = VK_FALLBACK[lbName] end
+    return kv
+end
+
+local ModSettingsOk, ModSettings = pcall(require, "modsettings")
+if not ModSettingsOk then
+    ModSettings = nil
+    log("modsettings.lua failed to load -- keybind support via Settings > Mods is disabled (every console command still works normally).")
+end
+
+if ModSettings and ModSettings.IsInstalled() then
+    local defs = {}
+    for _, c in ipairs(RF_COMMANDS) do
+        defs[#defs + 1] = { key = c.name, title = c.name, description = c.desc }
+    end
+    ModSettings.WriteManifest(defs)
+    local saved = ModSettings.ReadSavedFile()
+    local bound = 0
+    if saved then
+        for _, def in ipairs(defs) do
+            local v = saved[def.key]
+            if type(v) == "table" and type(v.primary) == "string" and v.primary ~= "" and v.primary ~= "None" then
+                local lbName = ModSettings.ToLocal(v.primary)
+                local keyValue = resolveKeyValue(lbName)
+                local handler = RF_HANDLERS[def.key]
+                if keyValue and handler then
+                    local okReg = pcall(function()
+                        RegisterKeyBind(keyValue, function()
+                            ExecuteInGameThread(function()
+                                pcall(function() handler(def.key, {}, nil) end)
+                            end)
+                        end)
+                    end)
+                    if okReg then
+                        bound = bound + 1
+                    else
+                        log("keybind for " .. def.key .. " failed to register -- key skipped.")
+                    end
+                else
+                    log("keybind for " .. def.key .. " ('" .. tostring(v.primary) .. "') not recognized -- skipped.")
+                end
+            end
+        end
+    end
+    log(string.format("R5ModSettings detected -- %d command keybind(s) active. Set any from Settings > Mods (none are bound by default); changes need a game restart to take effect.", bound))
+else
+    log("R5ModSettings not installed -- all commands remain console-only (this is entirely optional).")
 end
 
 log("Windrose Console Tools loaded.")

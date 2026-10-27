@@ -58,6 +58,20 @@ the top of your head. `pakcontents.xlsx` (included in this repo) is a full listi
 in the game's own pak files — search it for a name you recognize (a Blueprint for `rfentityspawn`,
 a `SM_...` static mesh for `rfmeshspawn`) to find its real path.
 
+## Keybinds (optional)
+
+Every command in this mod is console-only by default — nothing is bound to a key out of the box.
+If you have **R5ModSettings** installed, open Settings > Mods in-game and you'll find a row for
+every `rf` command in this mod, each settable to any key you like (starting at "None"). Pressing a
+bound key runs that command with no extra arguments — the same as typing the bare command and
+hitting enter. That makes a key most useful for the commands that already do something sensible
+with no arguments, especially `rfnoclip` (toggles on/off from a single key), `rfnoai`, `rfdespawn`,
+`rfnudge`, `rftarget`, `rftargetdata`, and `rfhelp`/`rfver`. A command that needs a real argument
+(a class/mesh path, a camera axis, etc.) will just print its usage reminder when triggered from a
+key, same as typing it with nothing after it. A key you pick or change in Settings > Mods needs a
+game restart to take effect, not live. Without R5ModSettings installed, this section doesn't apply
+— every command still works from the console exactly as documented below.
+
 ## Commands
 
 ### Help
@@ -66,6 +80,10 @@ a `SM_...` static mesh for `rfmeshspawn`) to find its real path.
 Lists every console command this mod registers, by name. Run `rfhelp <command>` for that one
 command's exact syntax and a full description. Run `rfhelp find <word> [more words]` to search —
 it lists every command whose name, usage, or description contains all the given words.
+
+#### `rfver`
+Prints this mod's version number, credits, a short license summary, and its GitHub repository
+URL (for updates/issues). Useful for checking exactly which version you have installed.
 
 ### Targeting and inspection
 
@@ -135,14 +153,16 @@ it stops moving/acting, which is useful for inspecting an NPC or creature up clo
 wandering off or attacking. This stops its AI "brain" and zeroes its current movement; it does not
 make it invulnerable or otherwise change its stats.
 
-#### `rfnoclip <on|off>`
+#### `rfnoclip` / `rfnoclip <on|off>`
 Toggles no-clip (fly freely through walls/terrain, no gravity) on your own character, by writing
 directly to its movement component (the game's built-in Ghost()/Fly() cheat functions are
 confirmed non-functional in this build, which is why this writes the underlying properties directly
-instead). While active, looking up/down and moving forward actually climbs/descends like a normal
-free-fly camera — your existing movement keys work, you don't need a separate up/down key. Prints
-a readback of the values it just set, so you can confirm it actually took effect. `rfnudge` is
-still available as a precise alternative if you want exact vertical control.
+instead). Run with no argument (or from a keybind) to flip it based on its current state;
+`on`/`off` force a specific state. While active, looking up/down and moving forward actually
+climbs/descends like a normal free-fly camera — your existing movement keys work, you don't need a
+separate up/down key. Prints a readback of the values it just set, so you can confirm it actually
+took effect. `rfnudge` is still available as a precise alternative if you want exact vertical
+control.
 
 #### `rfnudge <up|down> [amount]`
 Moves your own character straight up or down by `amount` world units (default 100). This is
