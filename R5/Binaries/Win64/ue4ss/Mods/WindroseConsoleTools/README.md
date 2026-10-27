@@ -10,7 +10,7 @@ repositionable photo camera, and weather/time control.
 This is a lightweight, commands-only tool. It does not add any on-screen menu or UI — everything
 is typed into the console. If you want a full in-game menu with hundreds of placeable items, a
 persistent base that survives reloads, NPC customization, photo mode with lights, and all the rest
-of it, that's what **Living Base Enhanced** is for. Windrose Console Tools is deliberately just the
+of it, that's what [**Living Base Enhanced**](https://www.nexusmods.com/windrose/mods/535) is for. Windrose Console Tools is deliberately just the
 bare debug/testing commands, for people who just want quick console-driven tools without the rest.
 
 **Independent of Living Base / Living Base Enhanced.** You can run this mod with LBE installed, or
@@ -22,10 +22,31 @@ photo camera, no-clip state) is session-only. Closing the game — or just runni
 `rfcamera off` yourself — removes it. This mod never writes to any save file or persistence
 ledger.
 
+**Visual feedback on every command.** Running a command — whether typed into the console or
+triggered from a keybind — shows an on-screen confirmation, not just a console/log line. That
+matters most for keybinds, since there's no console open to read when one fires: you'll still see
+it worked. Verbose commands (a full property dump, the full command list) show one summary toast
+instead of flooding the screen with one per line, and async commands (`rfsetweather`, `rfsettime`,
+`rfnudge`) confirm again once the change has actually finished applying, not just that it was
+accepted.
+
 ## Installation
 
-Drop the `WindroseConsoleTools` folder into your `ue4ss/Mods/` directory, same as any other UE4SS
-Lua mod, and make sure it's enabled in `ue4ss/Mods/mods.txt` (`WindroseConsoleTools : 1`).
+Install UE4SS (latest experimental / RE-UE4SS build) into Windrose first, same as any other UE4SS
+mod for this game.
+
+**Automatic:** This mod is designed to be installed using Vortex Mod Manager.
+
+**Manual:** Extract the download to the root of the Windrose game folder — it will place the mod
+folder at `...\Windrose\R5\Binaries\Win64\ue4ss\Mods\WindroseConsoleTools\`. Then open
+`ue4ss/Mods/mods.txt` and add the line `WindroseConsoleTools : 1`.
+
+## Uninstallation
+
+**Automatic:** If installed with Vortex, uninstall may be completed using it.
+
+**Manual:** Remove the `WindroseConsoleTools` folder from `ue4ss/Mods/`, and remove its line from
+`mods.txt`. Nothing this mod does is saved, so there's nothing else to clean up.
 
 ## General usage
 
@@ -60,17 +81,33 @@ a `SM_...` static mesh for `rfmeshspawn`) to find its real path.
 
 ## Keybinds (optional)
 
-Every command in this mod is console-only by default — nothing is bound to a key out of the box.
-If you have **R5ModSettings** installed, open Settings > Mods in-game and you'll find a row for
-every `rf` command in this mod, each settable to any key you like (starting at "None"). Pressing a
-bound key runs that command with no extra arguments — the same as typing the bare command and
-hitting enter. That makes a key most useful for the commands that already do something sensible
-with no arguments, especially `rfnoclip` (toggles on/off from a single key), `rfnoai`, `rfdespawn`,
-`rfnudge`, `rftarget`, `rftargetdata`, and `rfhelp`/`rfver`. A command that needs a real argument
-(a class/mesh path, a camera axis, etc.) will just print its usage reminder when triggered from a
-key, same as typing it with nothing after it. A key you pick or change in Settings > Mods needs a
-game restart to take effect, not live. Without R5ModSettings installed, this section doesn't apply
-— every command still works from the console exactly as documented below.
+Everything in this mod is console-only by default — nothing is bound to a key out of the box. If
+you have **R5ModSettings** installed, open Settings > Mods in-game and you'll find a row for each
+of the actions below (in this same order), each settable to any key you like (starting at "None").
+This list is **not** a 1:1 mirror of every console command — commands that need a real argument
+with no sensible default (a class/mesh path, a camera axis, etc.) aren't offered as a keybind at
+all, since a key bound to one could only ever replay its usage reminder. Every row's own detail
+pane in Settings > Mods repeats its full description plus "(Restart required to take effect.)" —
+**a key you pick or change there only takes effect after restarting the game, not live.** Without
+R5ModSettings installed, this section doesn't apply — every command still works from the console
+exactly as documented below.
+
+| # | Panel title | What it does |
+| --- | --- | --- |
+| 1 | `rftarget` | Aims via your camera and sets the nearest actor in front of you as the current target. |
+| 2 | `rftargetdata` | Prints every property of the current target. |
+| 3 | `rfgettargetfuncs` | Lists every function name on the current target's class. |
+| 4 | `rfdespawn` | Despawns the nearest actor you spawned with `rfentityspawn`/`rfmeshspawn`. |
+| 5 | `rfnoai on (freeze)` | Freezes the current target's AI. ("on" refers to the no-AI state being turned on — i.e. the target's AI gets disabled.) |
+| 6 | `rfnoai off (resume)` | Resumes the current target's AI. ("off" turns the no-AI state back off — i.e. the target's AI is re-enabled.) |
+| 7 | Cycle weather | Steps to the next weather preset in the list each press, looping back to the first after the last. |
+| 8 | Cycle camera: tripod -> selfie -> off | Steps the `rfcamera` photo camera through tripod → selfie → off → tripod each press. |
+| 9 | Reset Camera | A separate action from the cycle above — re-anchors the tripod camera to your current position/facing (does nothing in selfie mode or while the camera is off). |
+| 10 | `rfnoclip (toggle)` | Toggles no-clip on your own character on/off with a single key. |
+| 11 | `rfnudge up` | Moves you straight up 100 units (for use while `rfnoclip` is on). |
+| 12 | `rfnudge down` | Moves you straight down 100 units (for use while `rfnoclip` is on). |
+| 13 | `rfhelp` | Lists every console command this mod registers. |
+| 14 | `rfver` | Prints version, credits, license summary, and repository URL. |
 
 ## Commands
 
@@ -232,4 +269,4 @@ pickup.
 
 ## Credits
 
-Built by RedFalcon, reusing proven techniques originally developed for *Living Base Enhanced*.
+Built by RedFalcon, reusing proven techniques originally developed for [*Living Base Enhanced*](https://www.nexusmods.com/windrose/mods/535).

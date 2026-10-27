@@ -21,6 +21,142 @@ local function log(msg)
 end
 
 ----------------------------------------------------------------------------------------------
+-- RFToast -- on-screen confirmation for console commands, so running/binding a command actually
+-- shows you it did something, not just a console/log line you may not have open (especially true
+-- when a command is triggered from a keybind, with no console window visible at all). Ported from
+-- Living Base Enhanced's Spawner.Toast (see that file's own header comment for the full history of
+-- why this specific approach -- PrintString/ClientMessage/SpawnNotification were all dead ends):
+-- splices a plain /Script/UMG.TextBlock directly into the game's own native side-notification
+-- widget tree (WBP_SideNotificationsContainer_C's vbox_Notifications), in a container THIS mod
+-- constructs and owns (reusing the game's existing one proved unreliable across level loads).
+-- Deliberately simplified vs LBE's version -- no tag/dismiss system, since nothing here needs to
+-- pull a toast down early; every one just expires on its own after `seconds`.
+----------------------------------------------------------------------------------------------
+
+local RFToast = { _activeToasts = {}, _ownContainer = nil, _tickerStarted = false }
+
+local function rfToastTick()
+    local now = os.time()
+    local lastContainer
+    for i = #RFToast._activeToasts, 1, -1 do
+        local t = RFToast._activeToasts[i]
+        if now >= t.expiresAt then
+            pcall(function() t.box:RemoveChild(t.widget) end)
+            lastContainer = t.container
+            table.remove(RFToast._activeToasts, i)
+        end
+    end
+    -- Forcing the container visible (below) makes it absorb mouse clicks over its screen area even
+    -- once empty -- re-collapse it once the last active toast expires, same as its own default.
+    if #RFToast._activeToasts == 0 and lastContainer then
+        pcall(function()
+            lastContainer.bHidden = true
+            lastContainer:CheckVisibility()
+            lastContainer:SetVisibility(ESlateVisibility and ESlateVisibility.Collapsed or 1)
+        end)
+    end
+    if ExecuteWithDelay then ExecuteWithDelay(500, rfToastTick) end
+end
+local function rfEnsureToastTicker()
+    if RFToast._tickerStarted then return end
+    RFToast._tickerStarted = true
+    if ExecuteWithDelay then ExecuteWithDelay(500, rfToastTick) end
+end
+
+local function rfEnsureOwnToastContainer(GameInstance)
+    local c = RFToast._ownContainer
+    if c and c:IsValid() then
+        local b
+        pcall(function() b = c.vbox_Notifications end)
+        if b and b:IsValid() then
+            -- Re-assert mount/position every reuse, not just at construction -- a level load can
+            -- silently un-mount a previously-working container (confirmed in LBE).
+            pcall(function() c:AddToViewport(0) end)
+            pcall(function() c:SetPositionInViewport({ X = 20.0, Y = 75.0 }, true) end)
+            pcall(function() c:SetDesiredSizeInViewport({ X = 480.0, Y = 400.0 }) end)
+            return c, b
+        end
+    end
+    local templateClass
+    pcall(function()
+        local list = FindAllOf("WBP_SideNotificationsContainer_C")
+        if list then
+            local w = list[1]
+            if not w then pcall(function() w = list:Get(1) end) end
+            if w and w:IsValid() then templateClass = w:GetClass() end
+        end
+    end)
+    if not (templateClass and templateClass:IsValid()) then return nil, nil end
+    local okNew, newContainer = pcall(function() return StaticConstructObject(templateClass, GameInstance) end)
+    if not (okNew and newContainer and newContainer:IsValid()) then return nil, nil end
+    local okAdd = pcall(function() newContainer:AddToViewport(0) end)
+    if not okAdd then return nil, nil end
+    pcall(function() newContainer:SetPositionInViewport({ X = 20.0, Y = 75.0 }, true) end)
+    pcall(function() newContainer:SetDesiredSizeInViewport({ X = 480.0, Y = 400.0 }) end)
+    local b
+    pcall(function() b = newContainer.vbox_Notifications end)
+    if not (b and b:IsValid()) then return nil, nil end
+    RFToast._ownContainer = newContainer
+    return newContainer, b
+end
+
+local function rfTrySpliceToast(text, seconds)
+    local shown = false
+    pcall(function()
+        local okOuter, GameInstance = pcall(function() return UEHelpers.GetGameInstance() end)
+        if not (okOuter and GameInstance and GameInstance:IsValid()) then return end
+        local container, box = rfEnsureOwnToastContainer(GameInstance)
+        if not (container and box) then return end
+
+        local okClass, TextBlockClass = pcall(function() return StaticFindObject("/Script/UMG.TextBlock") end)
+        if not (okClass and TextBlockClass and TextBlockClass:IsValid()) then return end
+        local okNewW, newWidget = pcall(function() return StaticConstructObject(TextBlockClass, GameInstance) end)
+        if not (okNewW and newWidget and newWidget:IsValid()) then return end
+        pcall(function()
+            local ktl = UEHelpers.GetKismetTextLibrary()
+            newWidget:SetText(ktl:Conv_StringToText(text))
+        end)
+        pcall(function() newWidget:SetAutoWrapText(true) end)
+        pcall(function() newWidget:SetWrapTextWidth(440) end)
+        pcall(function()
+            local font = newWidget.Font
+            if font then
+                font.Size = 14
+                newWidget.Font = font
+            end
+        end)
+
+        local okAdd = pcall(function() box:AddChild(newWidget) end)
+        if not okAdd then return end
+        pcall(function() container.bHidden = false end)
+        pcall(function() container:CheckVisibility() end)
+        pcall(function() container:SetVisibility(ESlateVisibility and ESlateVisibility.Visible or 0) end)
+        shown = true
+
+        rfEnsureToastTicker()
+        RFToast._activeToasts[#RFToast._activeToasts + 1] =
+            { box = box, widget = newWidget, container = container, expiresAt = os.time() + math.ceil(seconds or 3.5) }
+    end)
+    return shown
+end
+
+-- RFToast.Show(msg, seconds) -- fire-and-forget on-screen confirmation. Retries a handful of times
+-- (spaced out) if the HUD widget tree isn't mounted yet (e.g. right at world load); falls back to
+-- a plain log line if it never mounts within that budget.
+function RFToast.Show(msg, seconds)
+    local text = tostring(msg)
+    local function attempt(triesLeft)
+        if rfTrySpliceToast(text, seconds) then return end
+        if triesLeft > 0 and ExecuteWithDelay then
+            ExecuteWithDelay(1000, function() attempt(triesLeft - 1) end)
+        else
+            print(string.format("%s %s\n", MOD_NAME, text))
+        end
+    end
+    attempt(10)
+end
+
+----------------------------------------------------------------------------------------------
 -- Shared command registry, for rfhelp
 ----------------------------------------------------------------------------------------------
 
@@ -39,6 +175,22 @@ local function registerRFCommand(name, handler)
     RF_HANDLERS[name] = handler
     if RegisterConsoleCommandHandler then
         pcall(function() RegisterConsoleCommandHandler(name, handler) end)
+    end
+end
+
+-- Shared console-output helper every command's own say() delegates to: prints to console, mirrors
+-- to Ar:Log if the console gave us a real FOutputDevice, and -- unless noToast is true -- also
+-- fires an RFToast so you see it worked even with no console open (e.g. triggered from a keybind).
+-- A handful of commands pass noToast=true for their per-line/verbose output (property dumps,
+-- function listings, the full rfhelp list) and fire ONE explicit toast of their own for just the
+-- final summary line instead -- otherwise a 50-property dump would flood the screen with 50 toasts.
+local function rfSay(tag, msg, Ar, noToast)
+    print("[WindroseConsoleTools] [" .. tag .. "] " .. msg .. "\n")
+    pcall(function()
+        if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
+    end)
+    if not noToast then
+        pcall(function() RFToast.Show(msg, 3.5) end)
     end
 end
 
@@ -139,12 +291,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfhelp", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfhelp", msg, Ar, true) end
             local sorted = {}
             for _, c in ipairs(RF_COMMANDS) do sorted[#sorted + 1] = c end
             table.sort(sorted, function(a, b) return a.name < b.name end)
@@ -157,6 +304,7 @@ if RegisterConsoleCommandHandler then
                 end
                 if #words == 0 then
                     say("usage: rfhelp find <word> [more words] -- lists every command whose name, usage, or description contains all the given words.")
+                    pcall(function() RFToast.Show("usage: rfhelp find <word> [more words]", 3.5) end)
                     return true
                 end
                 local hits = 0
@@ -172,6 +320,7 @@ if RegisterConsoleCommandHandler then
                     end
                 end
                 say(string.format("(%d match(es)) -- run 'rfhelp <command>' for details on one.", hits))
+                pcall(function() RFToast.Show(string.format("rfhelp find: %d match(es) (see console/log).", hits), 3.5) end)
                 return true
             end
             -- rfhelp <commandname> -- exact-match lookup, same as LBE's own lbhelp <command>:
@@ -189,18 +338,21 @@ if RegisterConsoleCommandHandler then
                 end
                 if not found then
                     say("rfhelp: no command named '" .. query .. "' -- run rfhelp with no arguments for the full list, or rfhelp find <word> to search.")
+                    pcall(function() RFToast.Show("rfhelp: no command named '" .. query .. "'.", 3.5) end)
                     return true
                 end
                 say(found.usage)
                 if found.desc and found.desc ~= "" then
                     for _, line in ipairs(wrapText(found.desc, 100)) do say(line) end
                 end
+                pcall(function() RFToast.Show(found.usage, 4.0) end)
                 return true
             end
             say(string.format("Windrose Console Tools -- %d command(s). Run 'rfhelp <command>' for its syntax/description, or 'rfhelp find <word>' to search.", #sorted))
             for _, c in ipairs(sorted) do
                 say("  " .. c.name)
             end
+            pcall(function() RFToast.Show(string.format("rfhelp: listed %d command(s) (see console/log).", #sorted), 3.5) end)
             return true
         end)
     end)
@@ -253,12 +405,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rftarget", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rftarget] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rftarget", msg, Ar) end
             local p1 = (Parameters and Parameters[1] or ""):lower()
             if p1 == "player" or p1 == "self" then
                 local pc = UEHelpers.GetPlayerController()
@@ -302,34 +449,27 @@ if RegisterConsoleCommandHandler then
         "Aims using your camera's look direction and remembers the nearest actor in front of you (within 400 units) as the 'current target' for rftargetdata/rfgettargetfuncs/rfnoai. 'rftarget player' targets your own character instead. 'rftarget child <propertyName>' re-points the target at a named object-reference property found on whatever is currently targeted, so you can drill one step deeper (e.g. from an actor into one of its components) -- run rftargetdata first to see what property names are available to drill into.")
 
     registerRFCommand("rftargetdata", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rftargetdata] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rftargetdata", msg, Ar, true) end
         local target = RF.lastProbed
         if not (target and target:IsValid()) then
             say("nothing targeted -- run rftarget (or rftarget player / rftarget child <name>) first.")
+            pcall(function() RFToast.Show("rftargetdata: nothing targeted -- run rftarget first.", 3.5) end)
             return true
         end
         dumpObjectProperties(target, "TARGET", say)
         say("done -- this prints to the console and to WindroseConsoleTools.log.")
+        pcall(function() RFToast.Show("rftargetdata: dumped current target's properties (see console/log).", 3.5) end)
         return true
     end)
     registerCmdInfo("rftargetdata", "rftargetdata",
         "Prints every property (name and current value) declared on your current target (set by rftarget), walking up its entire class hierarchy from the most specific class to the base Object class. This is how you find out what an object actually is -- its stats, its component references, its settings. Run rftarget first to set a target.")
 
     registerRFCommand("rfgettargetfuncs", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfgettargetfuncs] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfgettargetfuncs", msg, Ar, true) end
         local target = RF.lastProbed
         if not (target and target:IsValid()) then
             say("nothing targeted -- run rftarget first.")
+            pcall(function() RFToast.Show("rfgettargetfuncs: nothing targeted -- run rftarget first.", 3.5) end)
             return true
         end
         local cls
@@ -355,6 +495,7 @@ if RegisterConsoleCommandHandler then
             cls = nextCls
         end
         say(string.format("%d function(s) total. This only lists NAMES (it never calls anything, so it's always safe to run) -- some of these may be internal/engine functions rather than ones you can usefully call from a console command.", total))
+        pcall(function() RFToast.Show(string.format("rfgettargetfuncs: %d function(s) total (see console/log).", total), 3.5) end)
         return true
     end)
     registerCmdInfo("rfgettargetfuncs", "rfgettargetfuncs",
@@ -420,12 +561,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfentityspawn", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfentityspawn] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfentityspawn", msg, Ar) end
             local classPath = Parameters and Parameters[1]
             if not (classPath and classPath ~= "") then
                 say("usage: rfentityspawn </Game/Path/To/BP_Something.BP_Something_C> [yaw] -- spawns one instance of the given class a short distance in front of you, facing the given yaw in degrees (default 0). The class path must be the FULL path including the trailing _C, exactly as UE4SS's own class/object dump tools report it.")
@@ -465,12 +601,7 @@ if RegisterConsoleCommandHandler then
         "Spawns one instance of the given class about 200 units in front of you, optionally facing the given yaw in degrees (default 0 = facing the same direction you are). The class path must be the full /Game/... path including the trailing _C. This is for quick testing/visual checks only -- nothing spawned this way is saved: it exists only for the current play session (closing the game, or running rfdespawn, removes it). Not every class is spawnable this way -- some require extra setup the engine can't provide generically and will fail with a 'spawn failed' message.")
 
     registerRFCommand("rfdespawn", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfdespawn] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfdespawn", msg, Ar) end
         -- Clean up any stale entries (actor already gone for some other reason) before searching.
         for i = #RF.spawned, 1, -1 do
             local e = RF.spawned[i]
@@ -511,12 +642,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfnoai", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfnoai] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfnoai", msg, Ar) end
             local modeArg = (Parameters and Parameters[1] or "on"):lower()
             local wantFreeze = not (modeArg == "off" or modeArg == "resume" or modeArg == "unfreeze")
             local target = RF.lastProbed
@@ -610,12 +736,7 @@ if ExecuteWithDelay then rfnoclipDirectionTick() end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfnoclip", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfnoclip] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfnoclip", msg, Ar) end
             -- No argument given (including a keybind press, which always calls with empty
             -- Parameters) toggles based on the current state, rather than always defaulting to
             -- "on" -- that's what makes this usable bound to a single key.
@@ -685,12 +806,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfmeshspawn", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfmeshspawn] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfmeshspawn", msg, Ar) end
             local meshPath = Parameters and Parameters[1]
             if not (meshPath and meshPath ~= "") then
                 say("usage: rfmeshspawn </Game/Path/To/SM_Something.SM_Something> [zOffset] -- spawns the given static mesh as plain inert decor (no pickup behavior) 200 units in front of you, raised by zOffset units (default 20). The path must include the trailing '.AssetName' suffix, e.g. '...SM_Foo.SM_Foo'.")
@@ -785,12 +901,7 @@ if RegisterConsoleCommandHandler then
         "Spawns a raw static mesh asset as plain inert decoration (no pickup glow, no physics toss) 200 units in front of you, raised by zOffset units (default 20). Useful for previewing an asset without needing to add it to any kind of item list first. The path must be the full /Game/... path and must repeat the asset name after the final dot, e.g. '/Game/.../SM_Foo.SM_Foo'. Tracked the same way as rfentityspawn -- rfdespawn removes it.")
 
     registerRFCommand("rfmeshsolid", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfmeshsolid] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfmeshsolid", msg, Ar) end
         local mode = (Parameters and Parameters[1] or "on"):lower()
         if mode ~= "on" and mode ~= "off" then say("usage: rfmeshsolid <on|off>"); return true end
         local target = RF.lastProbed
@@ -939,12 +1050,7 @@ if ExecuteWithDelay then rfcamSelfieTick() end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfcamera", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfcamera] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfcamera", msg, Ar) end
             local mode = (Parameters and Parameters[1] or ""):lower()
             if mode == "off" then
                 rfcamOff(say)
@@ -988,12 +1094,7 @@ if RegisterConsoleCommandHandler then
         "Spawns (or repositions) a standalone camera for taking screenshots. 'tripod' places it where you're standing, facing the same direction you are, and leaves it there even as you walk away -- good for a fixed-composition shot. 'selfie' places it in front of your face, facing back at you, and keeps following your look direction every frame -- good for a selfie-style shot. 'off' removes the camera and returns your view to normal. 'reset' re-anchors tripod mode to your current position (selfie has nothing to reset, since it always follows you). Only one camera is active at a time -- switching modes replaces whichever one was active. This is a plain engine camera, not a custom asset, so it works with just this mod installed.")
 
     registerRFCommand("rfcammove", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfcammove] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfcammove", msg, Ar) end
         local cam = rfcamResolveActor()
         if not cam then say("no active camera -- run rfcamera tripod or rfcamera selfie first."); return true end
         local axis = (Parameters and Parameters[1] or ""):lower()
@@ -1013,12 +1114,7 @@ if RegisterConsoleCommandHandler then
         "Nudges the active rfcamera camera along one world axis by a signed amount (positive or negative), for exact/repeatable positioning. Does nothing (with a message) if no camera is currently active.")
 
     registerRFCommand("rfcamrotate", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfcamrotate] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfcamrotate", msg, Ar) end
         local cam = rfcamResolveActor()
         if not cam then say("no active camera -- run rfcamera tripod or rfcamera selfie first."); return true end
         local axis = (Parameters and Parameters[1] or ""):lower()
@@ -1039,12 +1135,7 @@ if RegisterConsoleCommandHandler then
         "Rotates the active rfcamera camera on one axis by a signed number of degrees, for exact/repeatable framing. Does nothing (with a message) if no camera is currently active.")
 
     registerRFCommand("rfcamfov", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfcamfov] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfcamfov", msg, Ar) end
         local cam = rfcamResolveActor()
         if not cam then say("no active camera -- run rfcamera tripod or rfcamera selfie first."); return true end
         local value = tonumber(Parameters and Parameters[1])
@@ -1060,12 +1151,7 @@ if RegisterConsoleCommandHandler then
         "Sets the field of view (in degrees, e.g. 90) on the active rfcamera camera's lens. Does nothing (with a message) if no camera is currently active.")
 
     registerRFCommand("rfcamcoords", function(FullCommand, Parameters, Ar)
-        local function say(msg)
-            print("[WindroseConsoleTools] [rfcamcoords] " .. msg .. "\n")
-            pcall(function()
-                if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-            end)
-        end
+        local function say(msg) rfSay("rfcamcoords", msg, Ar) end
         local cam = rfcamResolveActor()
         if not cam then say("no active camera -- run rfcamera tripod or rfcamera selfie first."); return true end
         local function parse3(s)
@@ -1135,7 +1221,9 @@ if ExecuteWithDelay then
                             end
                         end
                     end)
-                    print(string.format("[WindroseConsoleTools] [rfsetweather] done -- %d weather component(s) set to %s (ID=%d).\n", count, weather.name, weather.id))
+                    local doneMsg = string.format("done -- %d weather component(s) set to %s (ID=%d).", count, weather.name, weather.id)
+                    print("[WindroseConsoleTools] [rfsetweather] " .. doneMsg .. "\n")
+                    pcall(function() RFToast.Show(doneMsg, 3.5) end)
                 end)
             end
             weatherPollLoop()
@@ -1147,12 +1235,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfsetweather", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfsetweather] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfsetweather", msg, Ar) end
             local nameArg = Parameters and Parameters[1]
             local weather = nil
             if not nameArg then
@@ -1198,6 +1281,7 @@ if ExecuteWithDelay then
                     local comp = rfFindTimeComp()
                     if not comp then
                         print("[WindroseConsoleTools] [rfsettime] day-cycle component not found -- aborting.\n")
+                        pcall(function() RFToast.Show("rfsettime: day-cycle component not found -- aborting.", 3.5) end)
                         pendingTime = false
                     elseif req.stage == "start" then
                         pcall(function() comp:SetComponentTickEnabled(true) end)
@@ -1205,6 +1289,7 @@ if ExecuteWithDelay then
                         pcall(function() h0 = comp:GetCurrentTimeInHours() end)
                         if h0 == nil then
                             print("[WindroseConsoleTools] [rfsettime] could not read current hour -- aborting.\n")
+                            pcall(function() RFToast.Show("rfsettime: could not read current hour -- aborting.", 3.5) end)
                             pendingTime = false
                         else
                             origTimeSpeed = origTimeSpeed or comp.DayCycleSpeedInv
@@ -1218,10 +1303,14 @@ if ExecuteWithDelay then
                         local remaining = h and ((req.rawHour - h) % 24) or nil
                         if h ~= nil and (remaining <= 0.05 or remaining >= 23.95) then
                             local ok = pcall(function() comp:SetComponentTickEnabled(false) end)
-                            print(string.format("[WindroseConsoleTools] [rfsettime] arrived at real %.2f -- %s.\n", req.realHour, ok and "frozen exactly" or "freeze call failed, time will keep drifting"))
+                            local doneMsg = string.format("arrived at real %.2f -- %s.", req.realHour, ok and "frozen exactly" or "freeze call failed, time will keep drifting")
+                            print("[WindroseConsoleTools] [rfsettime] " .. doneMsg .. "\n")
+                            pcall(function() RFToast.Show(doneMsg, 3.5) end)
                             pendingTime = false
                         elseif req.ticks >= 1100 then
-                            print(string.format("[WindroseConsoleTools] [rfsettime] safety cutoff (~220s) -- still heading to real %.2f, giving up and restoring normal speed.\n", req.realHour))
+                            local cutoffMsg = string.format("safety cutoff (~220s) -- still heading to real %.2f, giving up and restoring normal speed.", req.realHour)
+                            print("[WindroseConsoleTools] [rfsettime] " .. cutoffMsg .. "\n")
+                            pcall(function() RFToast.Show(cutoffMsg, 3.5) end)
                             pcall(function() if origTimeSpeed then comp.DayCycleSpeedInv = origTimeSpeed end end)
                             pendingTime = false
                         else
@@ -1249,12 +1338,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfsettime", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfsettime] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfsettime", msg, Ar) end
             local realHour = tonumber(Parameters and Parameters[1]) or 12.0
             if realHour < 0 then realHour = 0 end
             if realHour > 24 then realHour = 24 end
@@ -1278,12 +1362,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rftargetmove", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rftargetmove] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rftargetmove", msg, Ar) end
             local target = RF.lastProbed
             if not (target and target:IsValid()) then
                 say("nothing targeted -- run rftarget first.")
@@ -1371,12 +1450,15 @@ if ExecuteWithDelay then
                         local pawn = pc and pc:IsValid() and pc.Pawn
                         if not (pawn and pawn:IsValid()) then
                             print("[WindroseConsoleTools] [rfnudge] no player pawn found.\n")
+                            pcall(function() RFToast.Show("rfnudge: no player pawn found.", 3.5) end)
                             return
                         end
                         local delta = (req.dir == "up") and req.amount or -req.amount
                         local loc = pawn:K2_GetActorLocation()
                         pawn:K2_SetActorLocation({ X = loc.X, Y = loc.Y, Z = loc.Z + delta }, false, {}, false)
-                        print(string.format("[WindroseConsoleTools] [rfnudge] moved %s by %.1f.\n", req.dir, req.amount))
+                        local doneMsg = string.format("moved %s by %.1f.", req.dir, req.amount)
+                        print("[WindroseConsoleTools] [rfnudge] " .. doneMsg .. "\n")
+                        pcall(function() RFToast.Show(doneMsg, 3.5) end)
                     end)
                 end)
             end
@@ -1389,12 +1471,7 @@ end
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfnudge", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfnudge] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfnudge", msg, Ar) end
             local dir = (Parameters and Parameters[1] or "up"):lower()
             if dir ~= "up" and dir ~= "down" then
                 say("usage: rfnudge <up|down> [amount]")
@@ -1423,12 +1500,7 @@ local RF_LICENSE_SUMMARY = "All rights reserved, except: personal modification i
 if RegisterConsoleCommandHandler then
     pcall(function()
         registerRFCommand("rfver", function(FullCommand, Parameters, Ar)
-            local function say(msg)
-                print("[WindroseConsoleTools] [rfver] " .. msg .. "\n")
-                pcall(function()
-                    if type(Ar) == "userdata" and Ar.type and Ar:type() == "FOutputDevice" then Ar:Log(msg) end
-                end)
-            end
+            local function say(msg) rfSay("rfver", msg, Ar) end
             say("Windrose Console Tools v" .. RF_VERSION)
             say(RF_CREDITS)
             say("License: " .. RF_LICENSE_SUMMARY)
@@ -1483,26 +1555,82 @@ if not ModSettingsOk then
     log("modsettings.lua failed to load -- keybind support via Settings > Mods is disabled (every console command still works normally).")
 end
 
-if ModSettings and ModSettings.IsInstalled() then
-    local defs = {}
-    for _, c in ipairs(RF_COMMANDS) do
-        defs[#defs + 1] = { key = c.name, title = c.name, description = c.desc }
+-- Calls a registered command's own handler directly with a fixed, preset Parameters list --
+-- e.g. callHandler("rfnoai", {"on"}) always freezes, regardless of what's typed in the console.
+-- This is what lets one keybind action force a SPECIFIC behavior out of a command that normally
+-- takes an argument, instead of just replaying its bare/no-argument default.
+local function callHandler(name, args)
+    return function()
+        local handler = RF_HANDLERS[name]
+        if handler then pcall(function() handler(name, args or {}, nil) end) end
     end
-    ModSettings.WriteManifest(defs)
+end
+
+-- Steps to the next weather preset in RF_WEATHERS each time it's pressed, wrapping back to the
+-- first after the last -- reuses the exact same queue (pendingWeather) rfsetweather itself
+-- writes to, so this is safe to call from a keybind for the same reason rfsetweather already is.
+local weatherCycleIndex = 0
+local function rfWeatherCycleNext()
+    weatherCycleIndex = (weatherCycleIndex % #RF_WEATHERS) + 1
+    local weather = RF_WEATHERS[weatherCycleIndex]
+    pendingWeather = weather
+    local msg = string.format("setting weather to %s (ID=%d)... (applies within ~0.2s)", weather.name, weather.id)
+    print("[WindroseConsoleTools] [rfweathercycle] " .. msg .. "\n")
+    pcall(function() RFToast.Show(msg, 3.5) end)
+end
+
+-- Steps the photo camera tripod -> selfie -> off -> tripod -> ... each time it's pressed, by
+-- just calling rfcamera's own handler with whichever mode comes next -- RFCAM.state is the same
+-- state rfcamera itself already tracks, so this stays in sync with the console command too.
+local function rfCameraCycleNext()
+    if RFCAM.state == "OFF" then
+        callHandler("rfcamera", { "tripod" })()
+    elseif RFCAM.state == "TRIPOD" then
+        callHandler("rfcamera", { "selfie" })()
+    else -- "SELFIE"
+        callHandler("rfcamera", { "off" })()
+    end
+end
+
+-- The curated list of keybind-able actions -- deliberately NOT a 1:1 mirror of every console
+-- command (see README's Keybinds section): commands that need a real argument with no sensible
+-- default (a class/mesh path, a camera axis, etc.) are left OUT entirely, since a key bound to one
+-- of those could only ever replay its usage reminder. A few commands are split into more than one
+-- action (rfnoai/rfnudge, so a direction/state gets its own dedicated key instead of one key that
+-- always does the same default thing), and rfsetweather/rfcamera each get a dedicated cycle action
+-- instead of their plain bare behavior.
+local KEYBIND_ACTIONS = {
+    { key = "rftarget", title = "rftarget", description = "Aims via your camera and sets the nearest actor in front of you as the current target.", invoke = callHandler("rftarget", {}) },
+    { key = "rftargetdata", title = "rftargetdata", description = "Prints every property of the current target (set by rftarget).", invoke = callHandler("rftargetdata", {}) },
+    { key = "rfgettargetfuncs", title = "rfgettargetfuncs", description = "Lists every function name on the current target's class.", invoke = callHandler("rfgettargetfuncs", {}) },
+    { key = "rfdespawn", title = "rfdespawn", description = "Despawns the nearest actor you spawned with rfentityspawn/rfmeshspawn.", invoke = callHandler("rfdespawn", {}) },
+    { key = "rfnoai_on", title = "rfnoai on (freeze)", description = "Freezes the current target's AI (set by rftarget).", invoke = callHandler("rfnoai", { "on" }) },
+    { key = "rfnoai_off", title = "rfnoai off (resume)", description = "Resumes the current target's AI (set by rftarget).", invoke = callHandler("rfnoai", { "off" }) },
+    { key = "rfweathercycle", title = "Cycle weather", description = "Steps to the next weather preset in the list each time it's pressed, looping back to the first after the last.", invoke = rfWeatherCycleNext },
+    { key = "rfcameracycle", title = "Cycle camera: tripod -> selfie -> off", description = "Steps the rfcamera photo camera through tripod -> selfie -> off -> tripod each time it's pressed.", invoke = rfCameraCycleNext },
+    { key = "rfcamerareset", title = "Reset Camera", description = "Re-anchors the tripod camera to your current position/facing (does nothing in selfie mode or while the camera is off).", invoke = callHandler("rfcamera", { "reset" }) },
+    { key = "rfnoclip", title = "rfnoclip (toggle)", description = "Toggles no-clip on your own character on/off.", invoke = callHandler("rfnoclip", {}) },
+    { key = "rfnudge_up", title = "rfnudge up", description = "Moves you straight up 100 units (for use while rfnoclip is on).", invoke = callHandler("rfnudge", { "up" }) },
+    { key = "rfnudge_down", title = "rfnudge down", description = "Moves you straight down 100 units (for use while rfnoclip is on).", invoke = callHandler("rfnudge", { "down" }) },
+    { key = "rfhelp", title = "rfhelp", description = "Lists every console command this mod registers.", invoke = callHandler("rfhelp", {}) },
+    { key = "rfver", title = "rfver", description = "Prints this mod's version, credits, license summary, and repository URL.", invoke = callHandler("rfver", {}) },
+}
+
+if ModSettings and ModSettings.IsInstalled() then
+    ModSettings.WriteManifest(KEYBIND_ACTIONS)
     local saved = ModSettings.ReadSavedFile()
     local bound = 0
     if saved then
-        for _, def in ipairs(defs) do
+        for _, def in ipairs(KEYBIND_ACTIONS) do
             local v = saved[def.key]
             if type(v) == "table" and type(v.primary) == "string" and v.primary ~= "" and v.primary ~= "None" then
                 local lbName = ModSettings.ToLocal(v.primary)
                 local keyValue = resolveKeyValue(lbName)
-                local handler = RF_HANDLERS[def.key]
-                if keyValue and handler then
+                if keyValue then
                     local okReg = pcall(function()
                         RegisterKeyBind(keyValue, function()
                             ExecuteInGameThread(function()
-                                pcall(function() handler(def.key, {}, nil) end)
+                                pcall(def.invoke)
                             end)
                         end)
                     end)
@@ -1517,7 +1645,7 @@ if ModSettings and ModSettings.IsInstalled() then
             end
         end
     end
-    log(string.format("R5ModSettings detected -- %d command keybind(s) active. Set any from Settings > Mods (none are bound by default); changes need a game restart to take effect.", bound))
+    log(string.format("R5ModSettings detected -- %d keybind(s) active. Set any from Settings > Mods (none are bound by default); changes need a game restart to take effect.", bound))
 else
     log("R5ModSettings not installed -- all commands remain console-only (this is entirely optional).")
 end

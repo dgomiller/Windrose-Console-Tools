@@ -1,0 +1,118 @@
+[size=5][b]Windrose Console Tools — Full Command Reference[/b][/size]
+[color=#D4D4D8]Windrose Console Tools is a small, standalone set of console commands for Windrose — spawning something for a quick look, inspecting whatever you're aiming at, basic utility toggles (no-clip, freeze AI), a repositionable photo camera, and weather/time control. It's a lightweight, commands-only tool — no on-screen menu or UI, everything is typed into the console (or, optionally, bound to a key). If you want a full in-game menu with hundreds of placeable items, a persistent base, NPC customization, and photo mode with lights, that's what [url=https://www.nexusmods.com/windrose/mods/535][b]Living Base Enhanced[/b][/url] is for — this mod is deliberately just the bare debug/testing commands.
+
+This article is the full reference for every command this mod adds. For installation, requirements, and the short version, see the main mod page.[/color]
+
+[size=4][b][u]General Usage[/u][/b][/size]
+[color=#D4D4D8]Every command starts with [i]rf[/i]. Type commands directly into the in-game console.
+
+[b]Start with rfhelp.[/b] On its own it lists every command this mod registers, by name. Run [i]rfhelp <command>[/i] (e.g. [i]rfhelp rfnoclip[/i]) for that one command's exact syntax and a full description. Run [i]rfhelp find <word>[/i] to search by keyword across every command's name and description.
+
+[b]Most commands act on a "current target."[/b] Aim your camera at something and run [i]rftarget[/i] — it remembers the nearest thing in front of you as your current target. A handful of commands ([i]rftargetdata[/i], [i]rfgettargetfuncs[/i], [i]rfnoai[/i], [i]rfmeshsolid[/i], [i]rftargetmove[/i]) then act on whatever that target currently is, so the usual pattern is: [i]rftarget[/i], then whichever follow-up command you need, as many times as you like, until you [i]rftarget[/i] something else.
+
+[b]Commands you spawn are tracked separately.[/b] [i]rfentityspawn[/i] and [i]rfmeshspawn[/i] both track what they spawn in their own list; [i]rfdespawn[/i] removes the nearest one. This is a different, smaller list than the "current target" above — spawning something also sets it as your current target automatically, but despawning only ever touches things this mod itself spawned, never anything that already existed in the world.
+
+[b]Most values are typed, not clicked.[/b] Several commands ([i]rftargetmove[/i], camera commands) take exact numbers so a result is reproducible — you can paste the same command again later and get the same result back.
+
+[b]Finding a class/asset path for rfentityspawn/rfmeshspawn.[/b] Both commands need the exact full [i]/Game/...[/i] path of whatever you want to spawn, which isn't something you'd normally know off the top of your head. [i]pakcontents.xlsx[/i] (shipped with this mod, also on the GitHub repo) is a full listing of every asset in the game's own pak files — search it for a name you recognize (a Blueprint for [i]rfentityspawn[/i], a SM_... static mesh for [i]rfmeshspawn[/i]) to find its real path.
+
+[b]Visual feedback on every command.[/b] Running a command — typed into the console or triggered from a keybind — shows an on-screen confirmation, not just a console/log line. That matters most for keybinds, since there's no console open to read when one fires: you'll still see it worked. Verbose commands (a full property dump, the full command list) show one summary toast instead of flooding the screen with one per line, and async commands ([i]rfsetweather[/i], [i]rfsettime[/i], [i]rfnudge[/i]) confirm again once the change has actually finished applying, not just that it was accepted.[/color]
+
+[size=4][b][u]Keybinds (Optional)[/u][/b][/size]
+[color=#D4D4D8]Everything in this mod is console-only by default — nothing is bound to a key out of the box. If you also have [url=https://www.nexusmods.com/windrose/mods/442][b]Windrose Mod Settings[/b][/url] installed, open Settings > Mods in-game and you'll find a row for each of the 14 actions below, each settable to any key you like (starting at "None"). This list is [b]not[/b] a 1:1 mirror of every console command — commands that need a real argument with no sensible default (a class/mesh path, a camera axis, etc.) aren't offered as a keybind at all, since a key bound to one could only ever replay its usage reminder. Every row's own detail pane in Settings > Mods repeats its full description plus "(Restart required to take effect.)" — a key you pick or change there only takes effect after restarting the game, not live.[/color]
+[list]
+[*][color=#D4D4D8][b]rftarget[/b] - Aims via your camera and sets the nearest actor in front of you as the current target.[/color][/*]
+[*][color=#D4D4D8][b]rftargetdata[/b] - Prints every property of the current target.[/color][/*]
+[*][color=#D4D4D8][b]rfgettargetfuncs[/b] - Lists every function name on the current target's class.[/color][/*]
+[*][color=#D4D4D8][b]rfdespawn[/b] - Despawns the nearest actor you spawned with rfentityspawn/rfmeshspawn.[/color][/*]
+[*][color=#D4D4D8][b]rfnoai on (freeze)[/b] - Freezes the current target's AI. ("on" refers to the no-AI state being turned on — i.e. the target's AI gets disabled.)[/color][/*]
+[*][color=#D4D4D8][b]rfnoai off (resume)[/b] - Resumes the current target's AI. ("off" turns the no-AI state back off — i.e. the target's AI is re-enabled.)[/color][/*]
+[*][color=#D4D4D8][b]Cycle weather[/b] - Steps to the next weather preset in the list each press, looping back to the first after the last.[/color][/*]
+[*][color=#D4D4D8][b]Cycle camera: tripod -> selfie -> off[/b] - Steps the rfcamera photo camera through tripod → selfie → off → tripod each press.[/color][/*]
+[*][color=#D4D4D8][b]Reset Camera[/b] - A separate action from the cycle above — re-anchors the tripod camera to your current position/facing (does nothing in selfie mode or while the camera is off).[/color][/*]
+[*][color=#D4D4D8][b]rfnoclip (toggle)[/b] - Toggles no-clip on your own character on/off with a single key.[/color][/*]
+[*][color=#D4D4D8][b]rfnudge up[/b] - Moves you straight up 100 units (for use while rfnoclip is on).[/color][/*]
+[*][color=#D4D4D8][b]rfnudge down[/b] - Moves you straight down 100 units (for use while rfnoclip is on).[/color][/*]
+[*][color=#D4D4D8][b]rfhelp[/b] - Lists every console command this mod registers.[/color][/*]
+[*][color=#D4D4D8][b]rfver[/b] - Prints version, credits, license summary, and repository URL.[/color][/*]
+[/list]
+
+[size=4][b][u]Help[/u][/b][/size]
+[color=#D4D4D8][b]rfhelp[/b] / [b]rfhelp <command>[/b] / [b]rfhelp find <word> [more words][/b]
+Lists every console command this mod registers, by name. Run [i]rfhelp <command>[/i] for that one command's exact syntax and a full description. Run [i]rfhelp find <word> [more words][/i] to search — it lists every command whose name, usage, or description contains all the given words.
+
+[b]rfver[/b]
+Prints this mod's version number, credits, a short license summary, and its GitHub repository URL (for updates/issues). Useful for checking exactly which version you have installed.[/color]
+
+[size=4][b][u]Targeting and Inspection[/u][/b][/size]
+[color=#D4D4D8][b]rftarget[/b] / [b]rftarget player[/b] / [b]rftarget child <propertyName>[/b]
+Aims using your camera's look direction and remembers the nearest actor in front of you (within 400 units) as the "current target" for [i]rftargetdata[/i]/[i]rfgettargetfuncs[/i]/[i]rfnoai[/i]. [i]rftarget player[/i] targets your own character instead. [i]rftarget child <propertyName>[/i] re-points the target at a named object-reference property found on whatever is currently targeted, so you can drill one step deeper (e.g. from an actor into one of its components) — run [i]rftargetdata[/i] first to see what property names are available to drill into.
+
+[b]rftargetdata[/b]
+Prints every property (name and current value) declared on your current target (set by [i]rftarget[/i]), walking up its entire class hierarchy from the most specific class to the base Object class. This is how you find out what an object actually is — its stats, its component references, its settings. Run [i]rftarget[/i] first to set a target.
+
+[b]rfgettargetfuncs[/b]
+Lists the name of every function declared on your current target's class (and every parent class above it), without calling any of them — purely a read-only listing. Useful when [i]rftargetdata[/i] shows an object with few or no readable properties, since some game objects expose their real data only through getter functions instead of plain properties.[/color]
+
+[size=4][b][u]Spawning[/u][/b][/size]
+[color=#D4D4D8][b]rfentityspawn </Game/Path/To/BP_Something.BP_Something_C> [yaw][/b]
+Spawns one instance of the given class about 200 units in front of you, optionally facing the given yaw in degrees (default 0 = facing the same direction you are). The class path must be the full /Game/... path including the trailing _C. This is for quick testing/visual checks only — nothing spawned this way is saved: it exists only for the current play session (closing the game, or running [i]rfdespawn[/i], removes it). Not every class is spawnable this way — some require extra setup the engine can't provide generically and will fail with a "spawn failed" message.
+
+[b]rfmeshspawn </Game/Path/To/SM_Something.SM_Something> [zOffset][/b]
+Spawns a raw static mesh asset as plain inert decoration (no pickup glow, no physics toss) 200 units in front of you, raised by zOffset units (default 20). Useful for previewing an asset without needing to add it to any kind of item list first. The path must be the full /Game/... path and must repeat the asset name after the final dot, e.g. /Game/.../SM_Foo.SM_Foo. Tracked the same way as [i]rfentityspawn[/i] — [i]rfdespawn[/i] removes it.
+
+[b]rfdespawn[/b]
+Removes the nearest actor that you previously spawned with [i]rfentityspawn[/i] or [i]rfmeshspawn[/i] (distance measured from your own character, regardless of which way you're facing). Only ever affects actors this mod itself spawned and is still tracking — it will never remove anything that already existed in the world. If you've spawned several things, run it repeatedly, nearest first.
+
+[b]rftargetmove [x=amount] [y=amount] [z=amount] [yaw=amount] [pitch=amount] [roll=amount] [scale=amount][/b]
+Nudges your current target (set by [i]rftarget[/i]) by the given amounts — position in world units (x/y/z), rotation in degrees (yaw/pitch/roll), and uniform scale (scale). Every value is a DELTA added to whatever the target already has, not an absolute value, and any parameter you don't include is left completely untouched — so [i]rftargetmove x=5[/i] moves it 5 units on X only, without needing to also specify y=0 z=0 etc. Combine as many as you like in one call, e.g. [i]rftargetmove x=10 z=-5 yaw=45 scale=0.2[/i]. Negative amounts work the same way, e.g. [i]rftargetmove scale=-0.1[/i] shrinks it slightly.
+
+[b]rfmeshsolid <on|off>[/b]
+Makes your current target (set by [i]rftarget[/i]) a real physical blocker you can't walk through ("on"), or removes its collision entirely ("off"). Most raw decor meshes default to pass-through/overlap-only collision (you can walk right through them) — this is how you make one actually solid, or undo that.[/color]
+
+[size=4][b][u]Movement / Utility[/u][/b][/size]
+[color=#D4D4D8][b]rfnoai [on|off][/b]
+Freezes (default, or "on") or resumes ("off") the AI of your current target (set by [i]rftarget[/i]) — it stops moving/acting, which is useful for inspecting an NPC or creature up close without it wandering off or attacking. This stops its AI "brain" and zeroes its current movement; it does not make it invulnerable or otherwise change its stats.
+
+[b]rfnoclip[/b] / [b]rfnoclip <on|off>[/b]
+Toggles no-clip (fly freely through walls/terrain, no gravity) on your own character, by writing directly to its movement component (the game's built-in Ghost()/Fly() cheat functions are confirmed non-functional in this build, which is why this writes the underlying properties directly instead). Run with no argument (or from a keybind) to flip it based on its current state; on/off force a specific state. While active, looking up/down and moving forward actually climbs/descends like a normal free-fly camera — your existing movement keys work, you don't need a separate up/down key. Prints a readback of the values it just set, so you can confirm it actually took effect. [i]rfnudge[/i] is still available as a precise alternative if you want exact vertical control.
+
+[b]rfnudge <up|down> [amount][/b]
+Moves your own character straight up or down by amount world units (default 100). This is specifically for vertical movement while [i]rfnoclip[/i] is on, as an exact/repeatable alternative to just looking up/down and moving forward. Run it repeatedly to keep climbing or descending, e.g. [i]rfnudge up 50[/i] several times in a row.[/color]
+
+[size=4][b][u]Camera[/u][/b][/size]
+[color=#D4D4D8][b]rfcamera <tripod|selfie|off|reset>[/b]
+Spawns (or repositions) a standalone camera for taking screenshots. [i]tripod[/i] places it where you're standing, facing the same direction you are, and leaves it there even as you walk away — good for a fixed-composition shot. [i]selfie[/i] places it in front of your face, facing back at you, and keeps following your look direction every frame — good for a selfie-style shot. [i]off[/i] removes the camera and returns your view to normal. [i]reset[/i] re-anchors tripod mode to your current position (selfie has nothing to reset, since it always follows you). Only one camera is active at a time — switching modes replaces whichever one was active. This is a plain engine camera, not a custom asset, so it works with just this mod installed.
+
+[b]rfcammove <x|y|z> <amount>[/b]
+Nudges the active [i]rfcamera[/i] camera along one world axis by a signed amount (positive or negative), for exact/repeatable positioning. Does nothing (with a message) if no camera is currently active.
+
+[b]rfcamrotate <pitch|yaw|roll> <amount>[/b]
+Rotates the active [i]rfcamera[/i] camera on one axis by a signed number of degrees, for exact/repeatable framing. Does nothing (with a message) if no camera is currently active.
+
+[b]rfcamfov <value>[/b]
+Sets the field of view (in degrees, e.g. 90) on the active [i]rfcamera[/i] camera's lens. Does nothing (with a message) if no camera is currently active.
+
+[b]rfcamcoords[/b] / [b]rfcamcoords <X,Y,Z>[/b] / [b]rfcamcoords <X,Y,Z> <Pitch,Yaw,Roll>[/b]
+Reads or sets the active [i]rfcamera[/i] camera's exact position and rotation (each as three comma-separated numbers, no spaces). With no arguments, prints the current pose AND a ready-to-paste command that reproduces it — useful for saving/restoring a specific shot. With one argument, sets position only. With both, sets position and rotation.[/color]
+
+[size=4][b][u]Weather and Time[/u][/b][/size]
+[color=#D4D4D8][b]rfsetweather [name][/b]
+Forces the current weather immediately (no argument = Sunny). Valid names: Windy, TortugaMist, TestSunny, TestCloudy, Sunny, Storm, RainHeavy, Rainbow, Rain, Overcast, Mist, LobbySunny, HighPressure, Fog, Default, Cloudy, AshlandsFog. These are the preset's own in-engine names, not necessarily in an order that means anything — just try the one you want. Safe to re-run any time weather changes mid-session.
+
+[b]rfsettime [realHour] [speedInv][/b]
+Sets the day/night cycle to a specific hour on a real 24-hour clock (e.g. 14 for 2pm) and freezes it there exactly, for consistent lighting across several screenshots. Takes up to about 20 seconds to arrive, since it works by fast-forwarding the clock rather than teleporting it. speedInv (default 0.0125) controls how fast it fast-forwards — a smaller number is faster. Safe to re-run any number of times, including right after a previous one finished.[/color]
+
+[size=4][b][u]Known Limitations[/u][/b][/size]
+[color=#D4D4D8][b]You cannot spawn a dropped inventory item (a real, lootable weapon/resource/etc. as if it had come out of someone's inventory) with this mod.[/b] [i]rfentityspawn[/i]/[i]rfmeshspawn[/i] can spawn a class or a raw mesh for a visual preview, but a real dropped-item pickup's actual identity (what item it is, its stack count, its stats) is not exposed anywhere this mod can read it — the game's own internal "drop view" object for a loot pickup has zero properties and zero usable functions visible to UE4SS's reflection at all, and the pickup's interaction-prompt data is just generic, shared UI configuration, not per-item data. This was investigated directly (probing a real world-dropped item) rather than assumed. [i]rfmeshspawn[/i] is the closest substitute if you just want the right static mesh sitting in the world — it just won't behave as a real, inventory-backed pickup.
+
+Because it's an unofficial mod, a game patch can change internal class/asset paths some commands depend on.[/color]
+
+[size=4][b][u]Credits[/u][/b][/size]
+[color=#D4D4D8]Built by RedFalcon, reusing proven techniques originally developed for [url=https://www.nexusmods.com/windrose/mods/535][b]Living Base Enhanced[/b][/url].
+
+Thanks also to [url=https://www.nexusmods.com/windrose/users/77413713][b]IceBoxStudio[/b][/url] for [url=https://www.nexusmods.com/windrose/mods/442][b]Windrose Mod Settings[/b][/url], which this mod optionally integrates with for in-game configuration.
+
+Source, the latest release, and the issue tracker: [url=https://github.com/dgomiller/Windrose-Console-Tools]github.com/dgomiller/Windrose-Console-Tools[/url].
+
+Built iteratively with Claude.[/color]

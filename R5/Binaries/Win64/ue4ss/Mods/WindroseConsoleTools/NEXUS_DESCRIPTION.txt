@@ -1,0 +1,89 @@
+[size=5][b]Windrose Console Tools[/b][/size]
+[color=#D4D4D8]A small, standalone set of console commands for Windrose — spawning something for a quick look, inspecting whatever you're aiming at, basic utility toggles (no-clip, freeze AI), a repositionable photo camera, and weather/time control. This is a lightweight, commands-only tool — no on-screen menu or UI, everything is typed into the console. If you want a full in-game menu with hundreds of placeable items, a persistent base, NPC customization, and photo mode with lights, that's what [url=https://www.nexusmods.com/windrose/mods/535][b]Living Base Enhanced[/b][/url] is for. Windrose Console Tools is deliberately just the bare debug/testing commands, for anyone who wants quick console-driven tools without the rest.[/color]
+
+[size=4][b]Nothing is saved[/b][/size]
+[color=#D4D4D8]Everything this mod spawns, moves, or changes (spawned actors, decor, the photo camera, no-clip state) is session-only. Closing the game — or just running [i]rfdespawn[/i] / [i]rfcamera off[/i] yourself — removes it. This mod never writes to any save file or persistence ledger.[/color]
+
+[size=4][b]Visual feedback on every command[/b][/size]
+[color=#D4D4D8]Running a command — typed into the console or triggered from a keybind — shows an on-screen confirmation, not just a console/log line. That matters most for keybinds, since there's no console open to read when one fires. Async commands confirm again once the change has actually finished applying, not just that it was accepted.[/color]
+
+[size=4][b]What it does[/b][/size]
+[color=#D4D4D8]
+[b]Targeting and inspection[/b] — [i]rftarget[/i] aims via your camera and remembers the nearest actor in front of you as your current target (or target your own character, or drill into one of its component properties). [i]rftargetdata[/i] dumps every property on the current target; [i]rfgettargetfuncs[/i] lists every function name on its class, read-only.
+
+[b]Spawning[/b] — [i]rfentityspawn[/i] spawns any class by its full asset path in front of you; [i]rfmeshspawn[/i] spawns a raw static mesh as inert decor; [i]rfdespawn[/i] removes the nearest thing you spawned. [i]rftargetmove[/i] nudges your current target's position/rotation/scale by exact deltas (e.g. [i]rftargetmove x=5 yaw=90[/i]), and [i]rfmeshsolid[/i] toggles real collision on a decor mesh.
+
+[b]Movement / utility[/b] — [i]rfnoclip[/i] toggles true fly-through-everything no-clip on your own character (with camera-direction free-fly movement, not just horizontal sliding), and [i]rfnudge up/down[/i] gives exact vertical control while it's on. [i]rfnoai[/i] freezes or resumes an NPC/creature's AI for close inspection.
+
+[b]Photo camera[/b] — [i]rfcamera tripod/selfie/off/reset[/i] spawns a standalone camera (tripod holds a fixed shot, selfie tracks your look direction), with [i]rfcammove/rfcamrotate/rfcamfov/rfcamcoords[/i] for exact, reproducible positioning, rotation, field of view, and full pose read/restore.
+
+[b]Weather and time[/b] — [i]rfsetweather[/i] forces any of 17 weather presets instantly; [i]rfsettime[/i] fast-forwards the day/night cycle to an exact real-clock hour and freezes it there, for consistent lighting across screenshots.
+
+[b]rfhelp[/b] lists every command this mod registers; [i]rfhelp <command>[/i] gives that one command's full syntax and description, and [i]rfhelp find <word>[/i] searches by keyword. [b]rfver[/b] prints the installed version, credits, license summary, and this mod's repository.
+[/color]
+
+[size=4][b]Installation[/b][/size]
+[color=#D4D4D8]Install UE4SS (latest experimental / RE-UE4SS build) into Windrose first, same as any other UE4SS mod for this game.[/color]
+
+[color=#D4D4D8][b]Automatic:[/b] This mod is designed to be installed using Vortex Mod Manager.[/color]
+
+[color=#D4D4D8][b]Manual:[/b][/color]
+[list=1]
+[*][color=#D4D4D8]Extract the download to the root of the Windrose game folder — it will place the mod folder at:
+...\Windrose\R5\Binaries\Win64\ue4ss\Mods\WindroseConsoleTools\
+(you should have ...\Mods\WindroseConsoleTools\Scripts\... inside it).[/color][/*]
+[*][color=#D4D4D8]Enable it: open ...\ue4ss\Mods\mods.txt and add the line:
+WindroseConsoleTools : 1[/color][/*]
+[/list]
+
+[color=#D4D4D8]Launch the game, load into a world, and open the console to try a command — start with [i]rfhelp[/i].[/color]
+
+[size=4][b]Uninstallation[/b][/size]
+[color=#D4D4D8][b]Automatic:[/b] If installed with Vortex, uninstall may be completed using it.[/color]
+
+[color=#D4D4D8][b]Manual:[/b] Remove the [b]WindroseConsoleTools[/b] folder from [b]..\Windrose\R5\Binaries\Win64\ue4ss\Mods[/b], and remove its line from [b]mods.txt[/b]. Nothing this mod does is saved, so there's nothing else to clean up.[/color]
+
+
+[size=4][b]Optional: Windrose Mod Settings Support[/b][/size]
+[color=#D4D4D8]If you also have [url=https://www.nexusmods.com/windrose/mods/442][b]Windrose Mod Settings[/b][/url] by [url=https://www.nexusmods.com/windrose/users/77413713][b]IceBoxStudio[/b][/url] installed, this mod registers itself with it automatically. From the game's native Settings > Mods screen you can bind any of 14 curated actions to a key — targeting, despawn, freeze/resume AI, cycle weather, cycle camera (tripod/selfie/off), reset camera, toggle no-clip, nudge up/down, help, and version info. [b]Nothing is bound by default[/b] — every row starts at "None". [b]Changes take effect after restarting the game.[/b][/color]
+
+[color=#D4D4D8]Entirely optional both directions: this mod works exactly the same, fully console-driven, without Windrose Mod Settings installed.[/color]
+
+[size=4][b]Requirements[/b][/size]
+
+[list]
+[*][color=#D4D4D8]Windrose (Kraken Express) — single-player. Built against the current Early Access build.[/color][/*]
+[*][color=#D4D4D8]UE4SS — latest experimental / RE-UE4SS build.[/color][/*]
+[/list]
+
+
+[size=4][b]Known Limitations[/b][/size]
+
+[list]
+[*][color=#D4D4D8][b]You cannot spawn a dropped inventory item (a real, lootable weapon/resource/etc. as if it had come out of someone's inventory) with this mod.[/b] A real dropped-item pickup's actual identity (what item it is, its stack count, its stats) is not exposed anywhere this mod can read it — the game's own internal "drop view" object for a loot pickup has zero properties and zero usable functions visible to UE4SS's reflection at all, confirmed by probing a real world-dropped item directly rather than assumed. [i]rfmeshspawn[/i] is the closest substitute if you just want the right static mesh sitting in the world — it just won't behave as a real, inventory-backed pickup.[/color][/*]
+[*][color=#D4D4D8]Because it's an unofficial mod, a game patch can change internal class/asset paths some commands depend on.[/color][/*]
+[/list]
+
+
+[size=4][b]Permissions / License[/b][/size]
+[color=#D4D4D8]All rights reserved by default, except for the specific permissions below — nothing here is implied beyond what's listed.
+
+Permitted, without needing to ask:[/color]
+[list=1]
+[*][color=#D4D4D8]Modify this mod for your own personal use.[/color][/*]
+[*][color=#D4D4D8]Reuse this mod's code in your own separate mod, with credit.[/color][/*]
+[*][color=#D4D4D8]Convert or port this mod to other games, with credit.[/color][/*]
+[/list]
+[color=#D4D4D8]
+Not permitted: reuploading or rehosting this mod — modified or unmodified — anywhere other than this page; selling this mod, or using it in anything sold or monetized, in whole or in part. (Nexus's own Donation Points system is fine — that's Nexus's own charity-linked mechanism, not third-party monetization.)
+
+Windrose and its game assets, class names, and IP belong to Kraken Express — this is an unofficial, unaffiliated mod.[/color]
+
+[size=4][b]Credits[/b][/size]
+[color=#D4D4D8]Built by RedFalcon, reusing proven techniques originally developed for [url=https://www.nexusmods.com/windrose/mods/535][b]Living Base Enhanced[/b][/url].
+
+Thanks also to [url=https://www.nexusmods.com/windrose/users/77413713][b]IceBoxStudio[/b][/url] for [url=https://www.nexusmods.com/windrose/mods/442][b]Windrose Mod Settings[/b][/url], which this mod optionally integrates with for in-game configuration.
+
+Source, full command reference, and the issue tracker: [url=https://github.com/dgomiller/Windrose-Console-Tools]github.com/dgomiller/Windrose-Console-Tools[/url].
+
+Built iteratively with Claude.[/color]
